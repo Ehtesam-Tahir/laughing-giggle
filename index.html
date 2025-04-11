@@ -46,12 +46,28 @@
             color: var(--text-color);
         }
         
+        .product-title {
+            font-size: 24px;
+            text-align: center;
+            margin: 20px 0;
+            background-color: var(--highlight-color);
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+        }
+        
         .counter {
             background-color: var(--accent-color);
             color: white;
             padding: 8px 16px;
             border-radius: 20px;
             font-weight: bold;
+        }
+        
+        .progress-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
         
         .file-input-container {
@@ -95,6 +111,7 @@
             box-shadow: var(--shadow);
             transition: transform 0.2s ease;
             cursor: pointer;
+            position: relative;
         }
         
         .product-card:hover {
@@ -121,6 +138,20 @@
             margin: 0 0 10px 0;
             font-size: 16px;
             font-weight: bold;
+        }
+        
+        .image-loader {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 200px;
+            background-color: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: #666;
         }
         
         .action-bar {
@@ -198,13 +229,32 @@
             font-size: 14px;
             display: none;
         }
+        
+        .image-placeholder {
+            height: 200px;
+            width: 100%;
+            background-color: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        #progress-text {
+            font-weight: bold;
+            margin-right: 10px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>Product Image Selector</h1>
-            <div class="counter">0/100</div>
+            <div class="progress-info">
+                <span id="progress-text">Product 0 of 0</span>
+                <div class="counter">0 selected</div>
+            </div>
         </header>
         
         <div class="file-input-container">
@@ -226,11 +276,12 @@
         
         <div id="content">
             <div id="loading" class="loading" style="display: none;">Loading products...</div>
+            <div id="product-title" class="product-title" style="display: none;"></div>
             <div id="gallery" class="gallery"></div>
         </div>
         
         <div class="action-bar">
-            <button id="done-btn" class="done-btn">Done</button>
+            <button id="done-btn" class="done-btn">Select Images & Continue to Next Product</button>
         </div>
     </div>
 
@@ -249,10 +300,15 @@
             const showFileBtn = document.getElementById('show-file-btn');
             const processManualBtn = document.getElementById('process-manual-btn');
             const debugInfoElement = document.getElementById('debug-info');
+            const productTitleElement = document.getElementById('product-title');
+            const progressText = document.getElementById('progress-text');
             
-            let products = [];
-            let selectedImages = new Set();
-            let fileContents = '';
+            // Data structures for the application
+            let allProducts = []; // All products with their images
+            let uniqueProducts = []; // List of unique product names
+            let currentProductIndex = -1; // Index of the current product being processed
+            let selectedImages = new Set(); // Currently selected images
+            let fileContents = ''; // Raw file contents
             
             // Handle file selection
             csvFileInput.addEventListener('change', function(e) {
@@ -265,10 +321,14 @@
                 // Reset state
                 galleryContainer.innerHTML = '';
                 selectedImages.clear();
+                allProducts = [];
+                uniqueProducts = [];
+                currentProductIndex = -1;
                 updateCounter();
                 errorContainer.innerHTML = '';
                 fileContentsElement.style.display = 'none';
                 debugInfoElement.style.display = 'none';
+                productTitleElement.style.display = 'none';
                 
                 // Read file contents for preview
                 const reader = new FileReader();
@@ -445,8 +505,7 @@
                 }
                 
                 // Process the manually parsed data
-                products = data;
-                displayProducts();
+                organizeProductData(data);
                 loadingIndicator.style.display = 'none';
             }
             
@@ -523,8 +582,41 @@
                     return;
                 }
                 
-                products = extractedProducts;
-                displayProducts();
+                organizeProductData(extractedProducts);
+            }
+            
+            function organizeProductData(products) {
+                allProducts = products;
+                
+                // Create a map to group images by product name
+                const productMap = new Map();
+                
+                products.forEach(product => {
+                    if (!productMap.has(product.name)) {
+                        productMap.set(product.name, []);
+                    }
+                    
+                    product.images.forEach(image => {
+                        productMap.get(product.name).push(image);
+                    });
+                });
+                
+                // Create the unique products array
+                uniqueProducts = Array.from(productMap.keys()).map(name => {
+                    return {
+                        name: name,
+                        images: productMap.get(name)
+                    };
+                });
+                
+                // Start with the first product
+                if (uniqueProducts.length > 0) {
+                    currentProductIndex = 0;
+                    displayCurrentProduct();
+                    updateProgressText();
+                } else {
+                    showError("No products found in the data.");
+                }
             }
             
             function isValidImageUrl(url) {
@@ -533,21 +625,29 @@
                       (url.startsWith('http://') || url.startsWith('https://'));
             }
             
-            function displayProducts() {
-                if (products.length === 0) {
-                    showError("No valid products with images found in the file.");
-                    return;
-                }
+            function displayCurrentProduct() {
+                // Clear previous selections
+                selectedImages.clear();
+                updateCounter();
                 
                 // Clear gallery
                 galleryContainer.innerHTML = '';
                 
+                if (currentProductIndex < 0 || currentProductIndex >= uniqueProducts.length) {
+                    showError("No more products to process.");
+                    return;
+                }
+                
+                const currentProduct = uniqueProducts[currentProductIndex];
+                
+                // Show product title
+                productTitleElement.textContent = currentProduct.name;
+                productTitleElement.style.display = 'block';
+                
                 // Create and append product cards
-                products.forEach(product => {
-                    product.images.forEach(image => {
-                        const card = createProductCard(product.name, image.url, image.column);
-                        galleryContainer.appendChild(card);
-                    });
+                currentProduct.images.forEach(image => {
+                    const card = createProductCard(currentProduct.name, image.url, image.column);
+                    galleryContainer.appendChild(card);
                 });
             }
             
@@ -557,12 +657,41 @@
                 card.dataset.url = imageUrl;
                 card.dataset.column = columnId;
                 
-                card.innerHTML = `
-                    <img src="${imageUrl}" alt="${productName}" class="product-image" onerror="this.src='/api/placeholder/250/200'; this.alt='Image failed to load';">
-                    <div class="product-info">
-                        <h3 class="product-name">${productName}</h3>
-                    </div>
-                `;
+                // Create a loader placeholder
+                const loaderDiv = document.createElement('div');
+                loaderDiv.className = 'image-loader';
+                loaderDiv.textContent = 'Loading image...';
+                
+                const img = document.createElement('img');
+                img.className = 'product-image';
+                img.alt = productName;
+                
+                // Handle image loading
+                img.onload = function() {
+                    // Remove loader when image loads successfully
+                    if (loaderDiv.parentNode === card) {
+                        card.removeChild(loaderDiv);
+                    }
+                };
+                
+                img.onerror = function() {
+                    // Change loader to error message
+                    loaderDiv.textContent = 'Image failed to load';
+                    // Set placeholder
+                    this.src = 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22 width%3D%22250%22 height%3D%22200%22 viewBox%3D%220 0 250 200%22%3E%3Crect fill%3D%22%23f0f0f0%22 width%3D%22250%22 height%3D%22200%22%2F%3E%3Ctext fill%3D%22%23888%22 font-family%3D%22Arial%2C sans-serif%22 font-size%3D%2216%22 x%3D%2250%25%22 y%3D%2250%25%22 text-anchor%3D%22middle%22 dominant-baseline%3D%22middle%22%3EImage not available%3C%2Ftext%3E%3C%2Fsvg%3E';
+                };
+                
+                // Set image source last (after attaching event listeners)
+                img.src = imageUrl;
+                
+                const infoDiv = document.createElement('div');
+                infoDiv.className = 'product-info';
+                infoDiv.innerHTML = `<h3 class="product-name">Image ${columnId}</h3>`;
+                
+                // Assemble card
+                card.appendChild(loaderDiv);
+                card.appendChild(img);
+                card.appendChild(infoDiv);
                 
                 // Handle image selection
                 card.addEventListener('click', function() {
@@ -583,24 +712,46 @@
             }
             
             function updateCounter() {
-                counter.textContent = `${selectedImages.size}/100`;
+                counter.textContent = `${selectedImages.size} selected`;
+            }
+            
+            function updateProgressText() {
+                progressText.textContent = `Product ${currentProductIndex + 1} of ${uniqueProducts.length}`;
             }
             
             // Handle Done button click
             doneButton.addEventListener('click', function() {
-                if (selectedImages.size === 0) {
-                    showError("Please select at least one image.");
-                    return;
+                // Save current selections (even if empty)
+                if (currentProductIndex >= 0 && currentProductIndex < uniqueProducts.length) {
+                    const currentProduct = uniqueProducts[currentProductIndex];
+                    
+                    // Generate and download CSV for current product
+                    if (selectedImages.size > 0) {
+                        const csvContent = generateCSV(currentProduct.name);
+                        downloadCSV(csvContent, `${currentProduct.name.replace(/[^\w\s]/gi, '')}_selected_images.csv`);
+                    } else {
+                        showError("No images selected for this product. Skipping to next product.");
+                    }
+                    
+                    // Move to next product
+                    currentProductIndex++;
+                    
+                    // Check if we've processed all products
+                    if (currentProductIndex >= uniqueProducts.length) {
+                        galleryContainer.innerHTML = '<div class="loading">All products have been processed!</div>';
+                        productTitleElement.style.display = 'none';
+                        doneButton.disabled = true;
+                        doneButton.textContent = 'All Products Processed';
+                    } else {
+                        displayCurrentProduct();
+                        updateProgressText();
+                    }
                 }
-                
-                // Create CSV content with selected image URLs
-                const csvContent = generateCSV();
-                downloadCSV(csvContent, 'selected_images.csv');
             });
             
-            function generateCSV() {
-                const header = 'Selected Image URLs\n';
-                const rows = Array.from(selectedImages).join('\n');
+            function generateCSV(productName) {
+                const header = 'Product Name,Image URL\n';
+                const rows = Array.from(selectedImages).map(url => `"${productName}","${url}"`).join('\n');
                 return header + rows;
             }
             
@@ -621,6 +772,11 @@
             
             function showError(message) {
                 errorContainer.innerHTML = `<div class="error">${message}</div>`;
+                
+                // Auto-clear error after 5 seconds
+                setTimeout(() => {
+                    errorContainer.innerHTML = '';
+                }, 5000);
             }
         });
     </script>
